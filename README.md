@@ -123,3 +123,14 @@ web/
 vercel.json              ← Vercel deploy config
 supabase_schema.sql      ← Database schema (run once)
 ```
+## Message Privacy
+Since this is a "private chat app for two", the easiest way to secure it completely is to disable new signups in your Supabase dashboard once both you and your partner have created your accounts.
+
+To do this:
+
+Go to your Supabase Dashboard -> Authentication -> Providers -> Email.
+Turn off "Enable Email Signup" (ONLY AFTER BOTH OF YOU HAVE SIGNED UP ALREADY)
+or Better just do,
+Disable, "Allow new users to sign up"
+If this is disabled, new users will not be able to sign up to your application.
+Once you do that, nobody else can create an account. And since your RLS policies require a user to be logged in (authenticated) to read or write data, your database becomes 100% locked down to just the two of you!
