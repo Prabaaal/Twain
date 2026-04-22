@@ -3,6 +3,75 @@
 -- Run this in your Supabase SQL editor
 -- ============================================
 
+-- ============================================
+-- Pair lock (enforce "just two of you")
+-- ============================================
+-- Insert exactly one row after both accounts exist:
+--   insert into public.app_pair (singleton, user_a, user_b) values (true, '<uuidA>', '<uuidB>');
+create table if not exists public.app_pair (
+  singleton boolean primary key default true,
+  user_a uuid references auth.users(id) on delete cascade not null,
+  user_b uuid references auth.users(id) on delete cascade not null,
+  created_at timestamptz default now(),
+  constraint app_pair_singleton check (singleton = true),
+  constraint app_pair_distinct_users check (user_a <> user_b)
+);
+
+alter table public.app_pair enable row level security;
+
+create policy "Pair can read pair config" on public.app_pair
+  for select using (public.is_pair_member(auth.uid()));
+
+create policy "Service role can manage pair config" on public.app_pair
+  for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+create or replace function public.set_app_pair(user_a uuid, user_b uuid)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'forbidden';
+  end if;
+
+  insert into public.app_pair (singleton, user_a, user_b)
+  values (true, user_a, user_b)
+  on conflict (singleton) do update
+    set user_a = excluded.user_a,
+        user_b = excluded.user_b;
+end;
+$$;
+
+create or replace function public.is_pair_member(uid uuid)
+returns boolean
+language sql
+stable
+security definer
+as $$
+  select exists(
+    select 1
+    from public.app_pair p
+    where p.singleton = true and (p.user_a = uid or p.user_b = uid)
+  );
+$$;
+
+create or replace function public.partner_of(uid uuid)
+returns uuid
+language sql
+stable
+security definer
+as $$
+  select case
+    when p.user_a = uid then p.user_b
+    when p.user_b = uid then p.user_a
+    else null
+  end
+  from public.app_pair p
+  where p.singleton = true
+  limit 1;
+$$;
+
 -- Users table (extends Supabase auth.users)
 create table public.profiles (
   id uuid references auth.users(id) on delete cascade primary key,
@@ -18,7 +87,10 @@ create table public.messages (
   id uuid primary key default gen_random_uuid(),
   sender_id uuid references public.profiles(id) on delete cascade not null,
   content text,
+  -- External URL (stickers) OR legacy public media URL.
   media_url text,
+  -- Preferred: private storage object path (e.g. "<uid>/<uuid>.webp")
+  media_path text,
   media_type text, -- 'image' | 'voice' | 'sticker'
   reply_to_id uuid references public.messages(id) on delete set null,
   created_at timestamptz default now(),
@@ -75,70 +147,97 @@ alter table public.saved_stickers enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.signals enable row level security;
 
--- Profiles: any authenticated user can read, only owner can update
-create policy "Anyone can view profiles" on public.profiles
-  for select using (auth.role() = 'authenticated');
+-- Profiles: only paired users can read paired profiles; only owner can update/insert
+create policy "Pair can view profiles" on public.profiles
+  for select using (
+    public.is_pair_member(auth.uid()) and public.is_pair_member(id)
+  );
 
 create policy "Users can update own profile" on public.profiles
-  for update using (auth.uid() = id);
+  for update using (auth.uid() = id and public.is_pair_member(auth.uid()));
 
 create policy "Profile created on signup" on public.profiles
-  for insert with check (auth.uid() = id);
+  for insert with check (auth.uid() = id and public.is_pair_member(auth.uid()));
 
--- Messages: any authenticated user can read and send
-create policy "Authenticated users can read messages" on public.messages
-  for select using (auth.role() = 'authenticated');
+-- Messages: only paired users can read/send within the pair
+create policy "Pair can read messages" on public.messages
+  for select using (
+    public.is_pair_member(auth.uid()) and public.is_pair_member(sender_id)
+  );
 
-create policy "Authenticated users can send messages" on public.messages
-  for insert with check (auth.uid() = sender_id);
+create policy "Pair can send messages" on public.messages
+  for insert with check (auth.uid() = sender_id and public.is_pair_member(auth.uid()));
 
 create policy "Sender can update own message" on public.messages
-  for update using (auth.uid() = sender_id);
+  for update using (auth.uid() = sender_id and public.is_pair_member(auth.uid()));
 
 create policy "Recipients can mark messages as read" on public.messages
-  for update using (auth.role() = 'authenticated')
+  for update
+  using (
+    public.is_pair_member(auth.uid())
+    and public.is_pair_member(sender_id)
+    and sender_id <> auth.uid()
+    and read_at is null
+  )
   with check (
-    auth.role() = 'authenticated'
+    public.is_pair_member(auth.uid())
+    and public.is_pair_member(sender_id)
     and sender_id <> auth.uid()
     and read_at is not null
   );
 
 -- Reactions: anyone authenticated can read and add
-create policy "Authenticated users can read reactions" on public.message_reactions
-  for select using (auth.role() = 'authenticated');
+create policy "Pair can read reactions" on public.message_reactions
+  for select using (
+    public.is_pair_member(auth.uid()) and public.is_pair_member(user_id)
+  );
 
-create policy "Authenticated users can add reactions" on public.message_reactions
-  for insert with check (auth.uid() = user_id);
+create policy "Pair can add reactions" on public.message_reactions
+  for insert with check (
+    auth.uid() = user_id and public.is_pair_member(auth.uid())
+  );
 
 -- Saved Stickers: only owner can read and add
 create policy "Users can view own stickers" on public.saved_stickers
-  for select using (auth.uid() = user_id);
+  for select using (auth.uid() = user_id and public.is_pair_member(auth.uid()));
 
 create policy "Users can add to own sticker collection" on public.saved_stickers
-  for insert with check (auth.uid() = user_id);
+  for insert with check (auth.uid() = user_id and public.is_pair_member(auth.uid()));
 
 -- Push subscriptions: only owner can manage own browser/device subscriptions
 create policy "Users can view own push subscriptions" on public.push_subscriptions
-  for select using (auth.uid() = user_id);
+  for select using (auth.uid() = user_id and public.is_pair_member(auth.uid()));
 
 create policy "Users can insert own push subscriptions" on public.push_subscriptions
-  for insert with check (auth.uid() = user_id);
+  for insert with check (auth.uid() = user_id and public.is_pair_member(auth.uid()));
 
 create policy "Users can update own push subscriptions" on public.push_subscriptions
-  for update using (auth.uid() = user_id);
+  for update using (auth.uid() = user_id and public.is_pair_member(auth.uid()));
 
 create policy "Users can delete own push subscriptions" on public.push_subscriptions
-  for delete using (auth.uid() = user_id);
+  for delete using (auth.uid() = user_id and public.is_pair_member(auth.uid()));
 
 -- Signals: users can read signals addressed to them
 create policy "Users can read their signals" on public.signals
-  for select using (auth.uid() = to_user);
+  for select using (
+    public.is_pair_member(auth.uid())
+    and auth.uid() = to_user
+    and public.is_pair_member(from_user)
+    and public.is_pair_member(to_user)
+  );
 
 create policy "Users can send signals" on public.signals
-  for insert with check (auth.uid() = from_user);
+  for insert with check (
+    public.is_pair_member(auth.uid())
+    and auth.uid() = from_user
+    and to_user = public.partner_of(auth.uid())
+  );
 
 create policy "Users can delete their signals" on public.signals
-  for delete using (auth.uid() = from_user or auth.uid() = to_user);
+  for delete using (
+    public.is_pair_member(auth.uid())
+    and (auth.uid() = from_user or auth.uid() = to_user)
+  );
 
 -- ============================================
 -- Realtime - enable for all tables
@@ -156,10 +255,21 @@ alter publication supabase_realtime add table public.saved_stickers;
 -- Bucket creation should be done via dashboard OR storage API.
 
 create policy "Authenticated users can upload media" on storage.objects
-  for insert with check (auth.role() = 'authenticated' and bucket_id = 'media');
+  for insert with check (
+    public.is_pair_member(auth.uid())
+    and bucket_id = 'media'
+    and (name like (auth.uid()::text || '/%'))
+  );
 
-create policy "Media is publicly readable" on storage.objects
-  for select using (bucket_id = 'media');
+create policy "Pair can read media objects" on storage.objects
+  for select using (
+    public.is_pair_member(auth.uid())
+    and bucket_id = 'media'
+    and (
+      name like ((select user_a::text from public.app_pair where singleton = true limit 1) || '/%')
+      or name like ((select user_b::text from public.app_pair where singleton = true limit 1) || '/%')
+    )
+  );
 
 -- ============================================
 -- Function: auto-create profile on signup

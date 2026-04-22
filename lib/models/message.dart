@@ -9,6 +9,7 @@ class Message {
   final String senderId;
   final String? content;
   final String? mediaUrl;
+  final String? mediaPath;
   final String? mediaType; // 'image' | 'voice' | 'sticker'
   final String? replyToId;
   final DateTime createdAt;
@@ -21,6 +22,7 @@ class Message {
     required this.senderId,
     this.content,
     this.mediaUrl,
+    this.mediaPath,
     this.mediaType,
     this.replyToId,
     required this.createdAt,
@@ -35,6 +37,7 @@ class Message {
       senderId: json['sender_id'] as String,
       content: json['content'] as String?,
       mediaUrl: json['media_url'] as String?,
+      mediaPath: json['media_path'] as String?,
       mediaType: json['media_type'] as String?,
       replyToId: json['reply_to_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -61,6 +64,7 @@ class Message {
     String? senderId,
     String? content,
     String? mediaUrl,
+    String? mediaPath,
     String? mediaType,
     String? replyToId,
     DateTime? createdAt,
@@ -73,6 +77,7 @@ class Message {
       senderId: senderId ?? this.senderId,
       content: content ?? this.content,
       mediaUrl: mediaUrl ?? this.mediaUrl,
+      mediaPath: mediaPath ?? this.mediaPath,
       mediaType: mediaType ?? this.mediaType,
       replyToId: replyToId ?? this.replyToId,
       createdAt: createdAt ?? this.createdAt,

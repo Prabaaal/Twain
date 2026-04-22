@@ -246,13 +246,10 @@ class CallService {
   }
 
   Future<String> _findPartnerId() async {
-    final partner = await supabase
-        .from('profiles')
-        .select('id')
-        .neq('id', _myId)
-        .limit(1)
-        .single();
-    return partner['id'] as String;
+    final pair = await supabase.from('app_pair').select('user_a, user_b').single();
+    final a = pair['user_a'] as String;
+    final b = pair['user_b'] as String;
+    return a == _myId ? b : a;
   }
 
   Future<String> _myDisplayName() async {

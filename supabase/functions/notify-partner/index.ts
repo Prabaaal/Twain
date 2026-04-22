@@ -1,9 +1,21 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import webpush from 'npm:web-push@3.6.7'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+function corsHeadersForOrigin(origin: string | null) {
+  // If you want to restrict this, set `ALLOWED_ORIGINS` to a comma-separated list.
+  const allowed = (Deno.env.get('ALLOWED_ORIGINS') ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+
+  const allowOrigin =
+    allowed.length === 0 ? (origin ?? '*') : allowed.includes(origin ?? '') ? (origin as string) : allowed[0]
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Vary': 'Origin',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 type PushRow = {
@@ -12,6 +24,9 @@ type PushRow = {
 }
 
 Deno.serve(async (request) => {
+  const origin = request.headers.get('Origin')
+  const corsHeaders = corsHeadersForOrigin(origin)
+
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -71,12 +86,21 @@ Deno.serve(async (request) => {
         ? body.preview.trim()
         : 'New message'
 
-    const [{ data: senderProfile }, { data: partnerProfile }] = await Promise.all([
+    const [{ data: senderProfile }, { data: pairRow }] = await Promise.all([
       adminClient.from('profiles').select('name').eq('id', user.id).maybeSingle(),
-      adminClient.from('profiles').select('id').neq('id', user.id).limit(1).maybeSingle(),
+      adminClient.from('app_pair').select('user_a, user_b').maybeSingle(),
     ])
 
-    if (!partnerProfile?.id) {
+    const partnerId =
+      pairRow && pairRow.user_a && pairRow.user_b
+        ? pairRow.user_a === user.id
+          ? pairRow.user_b
+          : pairRow.user_b === user.id
+            ? pairRow.user_a
+            : null
+        : null
+
+    if (!partnerId) {
       return new Response(JSON.stringify({ sent: 0, removed: 0, skipped: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -85,7 +109,7 @@ Deno.serve(async (request) => {
     const { data: subscriptions, error: subscriptionError } = await adminClient
       .from('push_subscriptions')
       .select('endpoint, subscription')
-      .eq('user_id', partnerProfile.id)
+      .eq('user_id', partnerId)
 
     if (subscriptionError) {
       throw subscriptionError

@@ -5,6 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import '../models/message.dart';
 import '../services/sticker_service.dart';
 import '../utils/downloader.dart';
+import '../main.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -122,13 +123,19 @@ class MessageBubble extends StatelessWidget {
     if (message.mediaType == 'sticker' && message.mediaUrl != null) {
       return _StickerBubble(url: message.mediaUrl!, isMine: isMine);
     }
-    if (message.mediaType == 'voice' && message.mediaUrl != null) {
-      return _VoiceBubble(
-          url: message.mediaUrl!, isMine: isMine, radius: _bubbleRadius);
+    if (message.mediaType == 'voice' && (message.mediaPath != null || message.mediaUrl != null)) {
+      return _SignedMediaBubble(
+        path: message.mediaPath,
+        fallbackUrl: message.mediaUrl,
+        builder: (signedUrl) => _VoiceBubble(url: signedUrl, isMine: isMine, radius: _bubbleRadius),
+      );
     }
-    if (message.isImage && message.mediaUrl != null) {
-      return _ImageBubble(
-          url: message.mediaUrl!, isMine: isMine, radius: _bubbleRadius);
+    if (message.isImage && (message.mediaPath != null || message.mediaUrl != null)) {
+      return _SignedMediaBubble(
+        path: message.mediaPath,
+        fallbackUrl: message.mediaUrl,
+        builder: (signedUrl) => _ImageBubble(url: signedUrl, isMine: isMine, radius: _bubbleRadius),
+      );
     }
 
     return AnimatedContainer(
@@ -264,7 +271,7 @@ class MessageBubble extends StatelessWidget {
                   );
                 },
               ),
-            if (message.mediaUrl != null)
+            if (message.mediaPath != null || message.mediaUrl != null)
               ListTile(
                 leading: Icon(Icons.download, color: Colors.grey[700]),
                 title: const Text('Save to Device'),
@@ -274,14 +281,68 @@ class MessageBubble extends StatelessWidget {
                       : (message.mediaType == 'voice' ? 'm4a' : 'bin');
                   final filename =
                       'HMS_${DateTime.now().millisecondsSinceEpoch}.$ext';
-                  await FileDownloader.downloadBlob(
-                      message.mediaUrl!, filename);
+                  final url = await _resolveDownloadUrl();
+                  if (url != null) {
+                    await FileDownloader.downloadBlob(url, filename);
+                  }
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
           ],
         ),
       ),
+    );
+  }
+
+  Future<String?> _resolveDownloadUrl() async {
+    final path = message.mediaPath;
+    if (path != null && path.isNotEmpty) {
+      final signed = await supabase.storage.from('media').createSignedUrl(path, 60);
+      return signed;
+    }
+    final url = message.mediaUrl;
+    if (url != null && url.isNotEmpty) {
+      return url;
+    }
+    return null;
+  }
+}
+
+class _SignedMediaBubble extends StatelessWidget {
+  final String? path;
+  final String? fallbackUrl;
+  final Widget Function(String url) builder;
+
+  const _SignedMediaBubble({
+    required this.path,
+    required this.fallbackUrl,
+    required this.builder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = path;
+    if (p == null || p.isEmpty) {
+      final url = fallbackUrl;
+      if (url == null || url.isEmpty) {
+        return const SizedBox.shrink();
+      }
+      return builder(url);
+    }
+
+    return FutureBuilder<String>(
+      future: supabase.storage.from('media').createSignedUrl(p, 60),
+      builder: (context, snapshot) {
+        final url = snapshot.data;
+        if (url == null || url.isEmpty) {
+          return const SizedBox(
+            width: 220,
+            height: 160,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return builder(url);
+      },
     );
   }
 }

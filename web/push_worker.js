@@ -17,7 +17,8 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   event.waitUntil((async () => {
-    const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+    const rawUrl = (event.notification.data && event.notification.data.url) || '/';
+    const targetUrl = typeof rawUrl === 'string' && rawUrl.startsWith('/') ? rawUrl : '/';
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
 
     for (const client of windows) {

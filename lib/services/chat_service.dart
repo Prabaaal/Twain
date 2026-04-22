@@ -28,14 +28,26 @@ class ChatService {
 
   // ── Fetch the other user's profile ──
   Future<Profile?> fetchPartnerProfile() async {
+    final partnerId = await _getPartnerId();
+    if (partnerId == null) return null;
     final data = await supabase
         .from('profiles')
         .select()
-        .neq('id', currentUserId)
-        .limit(1)
+        .eq('id', partnerId)
         .maybeSingle();
     if (data == null) return null;
     return Profile.fromJson(data);
+  }
+
+  Future<String?> _getPartnerId() async {
+    final row = await supabase.from('app_pair').select('user_a, user_b').maybeSingle();
+    if (row == null) return null;
+    final a = row['user_a'] as String?;
+    final b = row['user_b'] as String?;
+    if (a == null || b == null) return null;
+    if (a == currentUserId) return b;
+    if (b == currentUserId) return a;
+    return null;
   }
 
   // ── Send a text message ──
@@ -65,12 +77,10 @@ class ChatService {
       ),
     );
 
-    final url = supabase.storage.from('media').getPublicUrl(path);
-
     final data = await supabase.from('messages').insert({
       'id': _uuid.v4(),
       'sender_id': currentUserId,
-      'media_url': url,
+      'media_path': path,
       'media_type': mediaType,
       'reply_to_id': replyToId,
     }).select('*, reactions:message_reactions(*)').single();

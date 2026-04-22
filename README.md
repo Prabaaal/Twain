@@ -1,13 +1,13 @@
 # HillsMeetSea — Private Chat App
 
-A private chat + video call app for two people across India and China.
+A private chat + video call app for two people across the world.
 Built with Flutter Web + Supabase + WebRTC. Hosted on Vercel. **Total cost: $0.**
 
 ---
 
 ## Stack
 - **Frontend**: Flutter Web (PWA)
-- **Backend**: Supabase (Singapore region — no Google dependency)
+- **Backend**: Supabase (Singapore region)
 - **Calls**: WebRTC via `flutter_webrtc` + Cloudflare STUN
 - **Hosting**: Vercel (free)
 
@@ -17,7 +17,7 @@ Built with Flutter Web + Supabase + WebRTC. Hosted on Vercel. **Total cost: $0.*
 
 ### 1. Create a Supabase project
 1. Go to [supabase.com](https://supabase.com) → New project
-2. **Region: Southeast Asia (Singapore)** ← critical for China access
+2. **Region: Southeast Asia (Singapore)**
 3. Copy your **Project URL** and **anon public key**
 
 ### 2. Run the database schema
@@ -66,14 +66,14 @@ Your app will be live at `https://bondapp.vercel.app` (or your custom domain).
 
 ## How to install as PWA
 
-### On her iPhone 15:
+### On iPhone:
 1. Open the Vercel URL in **Safari** (must be Safari, not Chrome)
 2. Tap the **Share** button (box with arrow)
 3. Tap **"Add to Home Screen"**
 4. Tap **Add**
 5. The app icon appears on the home screen — tap to open fullscreen
 
-### On your Pixel 7a:
+### On Android:
 1. Open the URL in **Chrome**
 2. Tap the three-dot menu
 3. Tap **"Add to Home screen"** or **"Install app"**
@@ -84,13 +84,13 @@ Your app will be live at `https://bondapp.vercel.app` (or your custom domain).
 ## How it works
 
 ```
-You (India)  ←── Supabase Realtime (WebSocket) ──→  Her (China)
+You   ←── Supabase Realtime (WebSocket) ──→  Other user 
                         ↑
                   Singapore AWS
-                  (no Google)
+                  
 
 For calls:
-You  ←── WebRTC P2P (via Cloudflare STUN) ──→  Her
+You  ←── WebRTC P2P (via Cloudflare STUN) ──→  Other user
          (falls back to TURN relay if P2P fails)
 ```
 
@@ -129,8 +129,9 @@ Since this is a "private chat app for two", the easiest way to secure it complet
 To do this:
 
 Go to your Supabase Dashboard -> Authentication -> Providers -> Email.
-Turn off "Enable Email Signup" (ONLY AFTER BOTH OF YOU HAVE SIGNED UP ALREADY)
+Turn off 
+**"Enable Email Signup" (ONLY AFTER BOTH OF YOU HAVE SIGNED UP ALREADY)**
 or Better just do,
-Disable, "Allow new users to sign up"
+**Disable, "Allow new users to sign up"**
 If this is disabled, new users will not be able to sign up to your application.
 Once you do that, nobody else can create an account. And since your RLS policies require a user to be logged in (authenticated) to read or write data, your database becomes 100% locked down to just the two of you!
