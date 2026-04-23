@@ -4,6 +4,7 @@
 *.log
 *.pyc
 *.swp
+.DS_Store
 .buildlog/
 .history
 
@@ -131,3 +132,4 @@ lib/config/env.dart
 *.mp3
 
 implementation_plan.md
+Dothiswhencodechanges.txt
