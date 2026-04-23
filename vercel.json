@@ -1,8 +1,7 @@
 {
-  "buildCommand": "flutter build web --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=PUSH_VAPID_PUBLIC_KEY=$PUSH_VAPID_PUBLIC_KEY",
+  "buildCommand": "",
   "outputDirectory": "build/web",
   "framework": null,
-  "installCommand": "flutter pub get",
   "rewrites": [
     {
       "source": "/(.*)",
